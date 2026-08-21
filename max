@@ -3,140 +3,166 @@
 L=/tmp/max.lock
 E=/tmp/max.extend
 Q=/tmp/max.queue
+WX=/tmp/max.worker_exit   # "worker may exit when queue is empty"
+WIP="$Q.wip"              # batch being processed by the worker
 
+# singleton lock with PID liveness check
 if [ -e "$L" ]; then
- p=$(cat "$L" 2>/dev/null)
- if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
- touch "$E"
- echo "Extended max (pid $p)."
- exit 0
- fi
- rm -f "$L"
+	p=$(cat "$L" 2>/dev/null)
+	if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
+		touch "$E"
+		echo "Extended max (pid $p)."
+		exit 0
+	fi
+	rm -f "$L"
 fi
 echo $$ >"$L"
 W=""
-trap '[ -n "$W" ] && kill -TERM "$W" 2>/dev/null; wait "$W" 2>/dev/null; rm -f "$L" "$E" "$Q"' EXIT INT HUP TERM
-
+trap '[ -n "$W" ] && kill -TERM "$W" 2>/dev/null; wait "$W" 2>/dev/null; rm -f "$L" "$E" "$Q" "$WIP" "$WX"' EXIT INT HUP TERM
 . /etc/webui/max.conf 2>/dev/null
 [ "$max_enabled" != "true" ] && { echo "MAX disabled"; exit 1; }
 [ -z "$max_token" ] && { echo "No token"; exit 1; }
 [ -z "$max_chat_id" ] && { echo "No chat_id"; exit 1; }
-
 : "${max_video_duration:=10}"
 case "$max_video_duration" in *[!0-9]*) max_video_duration=10 ;; esac
 [ "$max_video_duration" -gt 300 ] && max_video_duration=300
 : "${max_min_free_pct:=10}"
-
 A=https://platform-api.max.ru
-C="-s --connect-timeout 100 --max-time $((max_video_duration+180))"
-
+C="-s --connect-timeout 15 --max-time $((max_video_duration+180))"
 if [ "$max_proxy" = "true" ] && [ -e /etc/webui/proxy.conf ]; then
- . /etc/webui/proxy.conf
- C="$C --socks5-hostname ${socks5_host}:${socks5_port}"
- C="$C --proxy-user ${socks5_username}:${socks5_password}"
+	. /etc/webui/proxy.conf
+	C="$C --socks5-hostname ${socks5_host}:${socks5_port}"
+	C="$C --proxy-user ${socks5_username}:${socks5_password}"
 fi
-
 m=$(echo "${max_caption:-%hostname, %datetime}" | sed \
- -e "s/%hostname/$(hostname -s)/" \
- -e "s/%datetime/$(date '+%F %T')/" \
- -e "s/%soctemp/$(ipcinfo --temp 2>/dev/null || echo N\/A)/")
-
+	-e "s/%hostname/$(hostname -s)/" \
+	-e "s/%datetime/$(date '+%F %T')/" \
+	-e "s/%soctemp/$(ipcinfo --temp 2>/dev/null || echo N\/A)/")
 check_free_space() {
- t=$(df /tmp | awk 'NR==2{print $2}')
- f=$(df /tmp | awk 'NR==2{print $4}')
- [ -z "$t" ] || [ -z "$f" ] && return 0 # df не сработал — не блокируем
- [ $((f * 100 / t)) -lt "$max_min_free_pct" ] && return 1
- return 0
+	t=$(df /tmp | awk 'NR==2{print $2}')
+	f=$(df /tmp | awk 'NR==2{print $4}')
+	[ -z "$t" ] || [ -z "$f" ] && return 0 # df РЅРµ СЃСЂР°Р±РѕС‚Р°Р» вЂ” РЅРµ Р±Р»РѕРєРёСЂСѓРµРј
+	[ $((f * 100 / t)) -lt "$max_min_free_pct" ] && return 1
+	return 0
 }
-
+# background uploader
 worker() {
- while :; do
- line=$(sed -n '1p' "$Q" 2>/dev/null)
- [ -z "$line" ] && { sleep 0.3; continue; }
- sed -i '1d' "$Q" 2>/dev/null
-
- [ "$line" = "DONE" ] && break
-
- f=${line%%|*}
- msg=${line#*|}
- [ -z "$f" ] && continue
- [ ! -s "$f" ] && continue
-
- msg=$(echo "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
-
- r=$(curl $C -X POST -H "Authorization: $max_token" \
- "$A/uploads?type=video")
- u=$(echo "$r" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
- t=$(echo "$r" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-
- if [ -z "$u" ]; then
- echo " FAIL: $r" >&2
- rm -f "$f"; continue
- fi
-
- curl $C -X POST \
- -F "file=@${f};type=video/mp4;filename=video.mp4" \
- "$u" >/dev/null
- rm -f "$f"
- sleep 2
-
- j="{\"text\":\"$msg\",\"attachments\":[{\"type\":\"video\",\"payload\":{\"token\":\"$t\"}}]}"
- n=0
- while :; do
- r=$(curl $C -X POST \
- -H "Authorization: $max_token" \
- -H "Content-Type: application/json" \
- -d "$j" \
- "$A/messages?chat_id=$max_chat_id")
- echo "$r" | grep -q attachment.not.ready || break
- n=$((n+1)); [ $n -ge 5 ] && break
- sleep $((n*3)) # backoff: 3, 6, 9, 12, 15
- done
- done
+	trap - EXIT INT HUP TERM
+	while :; do
+		if [ -s "$Q" ]; then
+			# Atomically move the queue aside.
+			mv "$Q" "$WIP" 2>/dev/null || { sleep 0.3; continue; }
+			while IFS= read -r line || [ -n "$line" ]; do
+				[ -z "$line" ] && continue
+				f=${line%%|*}
+				msg=${line#*|}
+				[ -z "$f" ] && continue
+				[ ! -s "$f" ] && continue
+				msg=$(echo "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+				r=$(curl $C -X POST -H "Authorization: $max_token" \
+					"$A/uploads?type=video")
+				u=$(echo "$r" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
+				t=$(echo "$r" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+				if [ -z "$u" ]; then
+					echo " FAIL: $r" >&2
+					rm -f "$f"; continue
+				fi
+				curl $C -X POST \
+					-F "file=@${f};type=video/mp4;filename=video.mp4" \
+					"$u" >/dev/null
+				rm -f "$f"
+				sleep 2
+				j="{\"text\":\"$msg\",\"attachments\":[{\"type\":\"video\",\"payload\":{\"token\":\"$t\"}}]}"
+				n=0
+				while :; do
+					r=$(curl $C -X POST \
+						-H "Authorization: $max_token" \
+						-H "Content-Type: application/json" \
+						-d "$j" \
+						"$A/messages?chat_id=$max_chat_id")
+					echo "$r" | grep -q attachment.not.ready || break
+					n=$((n+1)); [ $n -ge 5 ] && break
+					sleep $((n*3))
+				done
+			done < "$WIP"
+			rm -f "$WIP"
+		else
+			[ -e "$WX" ] && break
+			sleep 0.3
+		fi
+	done
 }
-
-rm -f "$Q"
+rm -f "$Q" "$WIP" "$WX"
 : >"$Q"
 worker &
 W=$!
-
 seg=0
+# Main loop: ensure-worker -> capture -> drain -> (re-capture if motion)
 while :; do
- seg=$((seg+1))
+	if ! kill -0 "$W" 2>/dev/null; then
+		wait "$W" 2>/dev/null
+		rm -f "$WX" "$WIP"
+		worker &
+		W=$!
+	fi
+	while :; do
+		seg=$((seg+1))
 
- if ! check_free_space; then
- echo "Low /tmp (<${max_min_free_pct}%). Stop."
- break
- fi
-
- f=/tmp/m-$(date +%s).mp4
- echo "Seg ${seg}: cap ${max_video_duration}s..."
- curl -sN -L --max-time $((max_video_duration+2)) \
- "http://localhost/video.mp4?duration=$max_video_duration" \
- -o "$f" &
- p=$!
- sleep "$max_video_duration"
- kill -9 $p 2>/dev/null
- wait $p 2>/dev/null
-
- if [ ! -s "$f" ]; then
- echo " FAIL empty. Enable hls"
- rm -f "$f"; break
- fi
- echo " got $(wc -c <"$f")b, queued"
-
- printf '%s|%s (#%d)\n' "$f" "$m" "$seg" >>"$Q"
-
- if [ -e "$E" ]; then
- rm -f "$E"
- echo " motion+, next..."
- continue
- fi
- echo " no ext, drain..."
- break
+		if ! check_free_space; then
+			echo "Low /tmp (<${max_min_free_pct}%). Stop."
+			seg=$((seg-1))
+			break 2
+		fi
+		f=/tmp/m-$(date +%s).mp4
+		echo "Seg ${seg}: cap ${max_video_duration}s..."
+		curl -sN -L --max-time $((max_video_duration+2)) \
+			"http://localhost/video.mp4?duration=$max_video_duration" \
+			-o "$f" &
+		p=$!
+		sleep "$max_video_duration"
+		kill -9 $p 2>/dev/null
+		wait $p 2>/dev/null
+		if [ ! -s "$f" ]; then
+			echo " FAIL empty. Enable hls"
+			rm -f "$f"; break
+		fi
+		echo " got $(wc -c <"$f")b, queued"
+		printf '%s|%s (#%d)\n' "$f" "$m" "$seg" >>"$Q"
+		if [ -e "$E" ]; then
+			rm -f "$E"
+			echo " motion+, next..."
+			continue
+		fi
+		echo " no ext, drain..."
+		break
+	done
+	# drain phase
+	touch "$WX"
+	extend_seen=0
+	while kill -0 "$W" 2>/dev/null; do
+		if [ -e "$E" ]; then
+			rm -f "$E"
+			rm -f "$WX"
+			extend_seen=1
+			break
+		fi
+		sleep 1
+	done
+	if [ "$extend_seen" = "0" ] && [ -e "$E" ]; then
+		rm -f "$E"
+		rm -f "$WX"
+		extend_seen=1
+	fi
+	if [ "$extend_seen" = "1" ]; then
+		echo " motion during drain, resuming capture..."
+		continue
+	fi
+	wait "$W" 2>/dev/null
+	echo "Done."
+	exit 0
 done
 
-echo "DONE" >>"$Q"
+echo "DONE" >>"$Q" 2>/dev/null
 wait "$W" 2>/dev/null
-echo "Done."
+echo "Stopped (low disk)."
 exit 0
