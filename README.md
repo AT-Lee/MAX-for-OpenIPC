@@ -87,7 +87,7 @@ All parameters are stored in `/etc/webui/max.conf`:
 | `max_token` | — | **Required.** Bot token from MAX BotFather. |
 | `max_chat_id` | — | **Required.** Target chat ID (negative for groups). |
 | `max_caption` | `%hostname, %datetime` | Caption template. Supports `%hostname`, `%datetime`, `%soctemp`. Segment index `(#N)` is added automatically. |
-| `max_video_duration` | `10` | Duration of a single segment in seconds. Range 1–30. Long motion = more segments, not longer segments. |
+| `max_video_duration` | `10` | Length of a single segment in seconds, 1–300 (the form offers 5/10/15/30). The camera streams `/video.mp4` until the client disconnects, so this is enforced by the script; the clip ends at a fragment boundary, which makes it a second or two longer or shorter than asked. Long motion = more segments, not longer segments. |
 | `max_min_free_pct` | `10` | Interrupt recording if free space in `/tmp` falls below this percentage. Protects the camera's flash memory. |
 | `max_proxy` | (none) | `true` — use SOCKS5 from `/etc/webui/proxy.conf`. |
 | `max_interval` | `15` | Interval in minutes for cron-based sending (only when `max_crontab=true`). |
@@ -143,7 +143,7 @@ Open `http://<camera_ip>/cgi-bin/ext-max.cgi` in your browser. The page includes
 │                                                 │
 │  loop:                                          │
 │    1. check df /tmp (abort if < %)              │
-│    2. curl /video.mp4?duration=N → /tmp/seg     │
+│    2. curl --max-time N /video.mp4 → /tmp/seg   │
 │    3. add "path|caption" to queue               │
 │    4. if /tmp/max.extend exists:                │
 │         delete, repeat loop                     │

@@ -115,15 +115,21 @@ while :; do
 		fi
 		f=/tmp/m-$(date +%s).mp4
 		echo "Seg ${seg}: cap ${max_video_duration}s..."
-		curl -sN -L --max-time $((max_video_duration+2)) \
-			"http://localhost/video.mp4?duration=$max_video_duration" \
-			-o "$f" &
-		p=$!
-		sleep "$max_video_duration"
-		kill -9 $p 2>/dev/null
-		wait $p 2>/dev/null
+		# /video.mp4 takes no parameters -- majestic streams until the
+		# client hangs up -- so the length is decided here. --max-time
+		# does that on its own: no background job to SIGKILL, and curl
+		# closes the file itself instead of dying with its buffer unwritten.
+		# It exits 28 when the time is up, which is the ordinary case here,
+		# so the capture is judged on the file below rather than on status.
+		#
+		# -f is what keeps an error page out of the chat. Without it the 500
+		# majestic answers when neither Records nor HLS is live is written to
+		# the .mp4 as a 168-byte HTML document -- which is not empty, so the
+		# check below passes it and the worker uploads it as a video.
+		curl -sN -L -f --max-time "$max_video_duration" \
+			"http://localhost/video.mp4" -o "$f"
 		if [ ! -s "$f" ]; then
-			echo " FAIL empty. Enable hls"
+			echo " FAIL: no video. Enable Records or HLS, then restart majestic"
 			rm -f "$f"; break
 		fi
 		echo " got $(wc -c <"$f")b, queued"
