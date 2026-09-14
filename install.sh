@@ -1,5 +1,5 @@
 #!/bin/sh
-# install.sh — установка MAX-for-OpenIPC на камеру с OpenIPC (BusyBox ash)
+# install.sh — установка MAX-for-OpenIPC на OpenIPC (BusyBox ash)
 # Запуск (рекомендуется):
 #   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/main/install.sh -o /tmp/install.sh && sh /tmp/install.sh
 
@@ -13,54 +13,50 @@ HEADER="/var/www/cgi-bin/p/header.cgi"
 MENU_ANCHOR='<ul aria-labelledby="dropdownExtensions" class="dropdown-menu dropdown-menu-lg-end">'
 MENU_ITEM='<li><a class="dropdown-item" href="/cgi-bin/ext-max.cgi">MAX</a></li>'
 
-# --- выбор загрузчика ---
-DOWNLOAD=""
+# --- проверка curl или wget ---
+HAS_CURL=0
 if command -v curl >/dev/null 2>&1; then
-    DOWNLOAD="curl -fsSL"
-elif command -v wget >/dev/null 2>&1; then
-    DOWNLOAD="wget -q -O"
-else
-    echo "Ошибка: необходим curl или wget" >&2
-    exit 1
+    HAS_CURL=1
+fi
+
+if [ "$HAS_CURL" = "0" ]; then
+    if ! command -v wget >/dev/null 2>&1; then
+        echo "Ошибка: необходим curl или wget" >&2
+        exit 1
+    fi
 fi
 
 download() {
-    # $1 — URL, $2 — путь назначения
-    if echo "$DOWNLOAD" | grep -q curl; then
+    if [ "$HAS_CURL" = "1" ]; then
         curl -fsSL "$1" -o "$2"
     else
         wget -q "$1" -O "$2"
     fi
 }
 
-mkdir -p /usr/sbin /etc/webui /var/www/cgi-bin || {
-    echo "Ошибка: не удалось создать директории" >&2
-    exit 1
-}
+mkdir -p /usr/sbin /etc/webui /var/www/cgi-bin
 
 # --- загрузка файлов ---
 echo "→ Загрузка max..."
-[ -f /usr/sbin/max ] && cp /usr/sbin/max /usr/sbin/max.bak
-download "${BASE_URL}/max" "/usr/sbin/max" || {
-    echo "Ошибка загрузки max" >&2
-    exit 1
-}
+if [ -f /usr/sbin/max ]; then
+    cp /usr/sbin/max /usr/sbin/max.bak
+fi
+download "${BASE_URL}/max" "/usr/sbin/max"
 
 echo "→ Загрузка max.conf..."
-[ -f /etc/webui/max.conf ] && cp /etc/webui/max.conf /etc/webui/max.conf.bak
-download "${BASE_URL}/max.conf" "/etc/webui/max.conf" || {
-    echo "Ошибка загрузки max.conf" >&2
-    exit 1
-}
+if [ -f /etc/webui/max.conf ]; then
+    cp /etc/webui/max.conf /etc/webui/max.conf.bak
+fi
+download "${BASE_URL}/max.conf" "/etc/webui/max.conf"
 
 echo "→ Загрузка ext-max.cgi..."
-[ -f /var/www/cgi-bin/ext-max.cgi ] && cp /var/www/cgi-bin/ext-max.cgi /var/www/cgi-bin/ext-max.cgi.bak
-download "${BASE_URL}/ext-max.cgi" "/var/www/cgi-bin/ext-max.cgi" || {
-    echo "Ошибка загрузки ext-max.cgi" >&2
-    exit 1
-}
+if [ -f /var/www/cgi-bin/ext-max.cgi ]; then
+    cp /var/www/cgi-bin/ext-max.cgi /var/www/cgi-bin/ext-max.cgi.bak
+fi
+download "${BASE_URL}/ext-max.cgi" "/var/www/cgi-bin/ext-max.cgi"
 
-chmod +x /usr/sbin/max /var/www/cgi-bin/ext-max.cgi
+chmod +x /usr/sbin/max
+chmod +x /var/www/cgi-bin/ext-max.cgi
 
 # --- включение hls и motionDetect в majestic.yaml ---
 if [ -f "$MAJESTIC" ]; then
@@ -68,15 +64,19 @@ if [ -f "$MAJESTIC" ]; then
     cp "$MAJESTIC" "${MAJESTIC}.bak"
 
     awk '
-    BEGIN { in_hls=0; in_md=0; hls_done=0; md_done=0; hls_present=0; md_present=0 }
+    BEGIN {
+        in_hls = 0; in_md = 0
+        hls_done = 0; md_done = 0
+        hls_present = 0; md_present = 0
+    }
 
     /^[A-Za-z][A-Za-z0-9_]*:/ {
-        if (in_hls && !hls_done) { print "  enabled: true"; hls_done=1 }
-        if (in_md  && !md_done)  { print "  enabled: true"; md_done=1  }
+        if (in_hls && !hls_done) { print "  enabled: true"; hls_done = 1 }
+        if (in_md  && !md_done)  { print "  enabled: true"; md_done  = 1 }
         in_hls = ($0 ~ /^hls:/)
         in_md  = ($0 ~ /^motionDetect:/)
-        if (in_hls) hls_present=1
-        if (in_md)  md_present=1
+        if (in_hls) hls_present = 1
+        if (in_md)  md_present  = 1
         print
         next
     }
@@ -85,7 +85,7 @@ if [ -f "$MAJESTIC" ]; then
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
         print indent "enabled: true"
-        hls_done=1
+        hls_done = 1
         next
     }
 
@@ -93,7 +93,7 @@ if [ -f "$MAJESTIC" ]; then
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
         print indent "enabled: true"
-        md_done=1
+        md_done = 1
         next
     }
 
