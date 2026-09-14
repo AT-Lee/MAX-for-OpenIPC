@@ -13,14 +13,14 @@ MENU_ITEM='<li><a class="dropdown-item" href="/cgi-bin/ext-max.cgi">MAX</a></li>
 
 DOWNLOAD=""
 if command -v curl >/dev/null 2>&1; then
-    DOWNLOAD="curl"
+DOWNLOAD="curl"
 else
-    if command -v wget >/dev/null 2>&1; then
-        DOWNLOAD="wget"
-    else
-        echo "Ошибка: необходим curl или wget" >&2
-        exit 1
-    fi
+if command -v wget >/dev/null 2>&1; then
+DOWNLOAD="wget"
+else
+echo "Ошибка: необходим curl или wget" >&2
+exit 1
+fi
 fi
 
 download() {
