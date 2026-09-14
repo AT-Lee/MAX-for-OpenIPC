@@ -1,7 +1,6 @@
+cat > /tmp/install.sh << 'EOF'
 #!/bin/sh
 # install.sh — установка MAX-for-OpenIPC на OpenIPC (BusyBox ash)
-# Запуск (рекомендуется):
-#   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/main/install.sh -o /tmp/install.sh && sh /tmp/install.sh
 
 REPO="AT-Lee/MAX-for-OpenIPC"
 BRANCH="main"
@@ -13,21 +12,21 @@ HEADER="/var/www/cgi-bin/p/header.cgi"
 MENU_ANCHOR='<ul aria-labelledby="dropdownExtensions" class="dropdown-menu dropdown-menu-lg-end">'
 MENU_ITEM='<li><a class="dropdown-item" href="/cgi-bin/ext-max.cgi">MAX</a></li>'
 
-# --- проверка curl или wget ---
-HAS_CURL=0
+# --- выбор загрузчика ---
+DOWNLOAD=""
 if command -v curl >/dev/null 2>&1; then
-    HAS_CURL=1
-fi
-
-if [ "$HAS_CURL" = "0" ]; then
-    if ! command -v wget >/dev/null 2>&1; then
+    DOWNLOAD="curl -fsSL"
+else
+    if command -v wget >/dev/null 2>&1; then
+        DOWNLOAD="wget -q -O"
+    else
         echo "Ошибка: необходим curl или wget" >&2
         exit 1
     fi
 fi
 
 download() {
-    if [ "$HAS_CURL" = "1" ]; then
+    if echo "$DOWNLOAD" | grep -q curl; then
         curl -fsSL "$1" -o "$2"
     else
         wget -q "$1" -O "$2"
@@ -55,8 +54,7 @@ if [ -f /var/www/cgi-bin/ext-max.cgi ]; then
 fi
 download "${BASE_URL}/ext-max.cgi" "/var/www/cgi-bin/ext-max.cgi"
 
-chmod +x /usr/sbin/max
-chmod +x /var/www/cgi-bin/ext-max.cgi
+chmod +x /usr/sbin/max /var/www/cgi-bin/ext-max.cgi
 
 # --- включение hls и motionDetect в majestic.yaml ---
 if [ -f "$MAJESTIC" ]; then
@@ -64,41 +62,32 @@ if [ -f "$MAJESTIC" ]; then
     cp "$MAJESTIC" "${MAJESTIC}.bak"
 
     awk '
-    BEGIN {
-        in_hls = 0; in_md = 0
-        hls_done = 0; md_done = 0
-        hls_present = 0; md_present = 0
-    }
-
+    BEGIN { in_hls=0; in_md=0; hls_done=0; md_done=0; hls_present=0; md_present=0 }
     /^[A-Za-z][A-Za-z0-9_]*:/ {
-        if (in_hls && !hls_done) { print "  enabled: true"; hls_done = 1 }
-        if (in_md  && !md_done)  { print "  enabled: true"; md_done  = 1 }
+        if (in_hls && !hls_done) { print "  enabled: true"; hls_done=1 }
+        if (in_md  && !md_done)  { print "  enabled: true"; md_done=1  }
         in_hls = ($0 ~ /^hls:/)
         in_md  = ($0 ~ /^motionDetect:/)
-        if (in_hls) hls_present = 1
-        if (in_md)  md_present  = 1
+        if (in_hls) hls_present=1
+        if (in_md)  md_present=1
         print
         next
     }
-
     in_hls && /^[ \t]+enabled:/ {
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
         print indent "enabled: true"
-        hls_done = 1
+        hls_done=1
         next
     }
-
     in_md && /^[ \t]+enabled:/ {
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
         print indent "enabled: true"
-        md_done = 1
+        md_done=1
         next
     }
-
     { print }
-
     END {
         if (in_hls && !hls_done) print "  enabled: true"
         if (in_md  && !md_done)  print "  enabled: true"
@@ -125,7 +114,6 @@ if [ -f "$HEADER" ]; then
     else
         echo "→ Добавление пункта меню в header.cgi..."
         cp "$HEADER" "${HEADER}.bak"
-
         awk -v anchor="$MENU_ANCHOR" -v item="$MENU_ITEM" '
             !inserted && index($0, anchor) > 0 {
                 print
@@ -135,7 +123,6 @@ if [ -f "$HEADER" ]; then
             }
             { print }
         ' "$HEADER" > "${HEADER}.tmp"
-
         if [ -s "${HEADER}.tmp" ]; then
             mv "${HEADER}.tmp" "$HEADER"
             echo "   ✓ Пункт меню добавлен"
@@ -158,3 +145,5 @@ echo ""
 echo "Резервные копии сохранены рядом с изменёнными файлами (*.bak)."
 echo "Перезапустите majestic (например, через веб-UI или killall -HUP majestic)."
 echo "Далее откройте: Extensions → MAX и укажите токен бота и ID чата."
+EOF
+sh /tmp/install.sh
