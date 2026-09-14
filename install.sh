@@ -1,9 +1,7 @@
 #!/bin/sh
-# install.sh — установка MAX-for-OpenIPC на камеру с OpenIPC
-# Использование:
-#   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/main/install.sh | sh
-
-set -e
+# install.sh — установка MAX-for-OpenIPC на камеру с OpenIPC (BusyBox ash)
+# Запуск (рекомендуется):
+#   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/main/install.sh -o /tmp/install.sh && sh /tmp/install.sh
 
 REPO="AT-Lee/MAX-for-OpenIPC"
 BRANCH="main"
@@ -15,33 +13,54 @@ HEADER="/var/www/cgi-bin/p/header.cgi"
 MENU_ANCHOR='<ul aria-labelledby="dropdownExtensions" class="dropdown-menu dropdown-menu-lg-end">'
 MENU_ITEM='<li><a class="dropdown-item" href="/cgi-bin/ext-max.cgi">MAX</a></li>'
 
-# --- проверка утилит для скачивания ---
+# --- выбор загрузчика ---
+DOWNLOAD=""
 if command -v curl >/dev/null 2>&1; then
-    download() { curl -fsSL "$1" -o "$2"; }
+    DOWNLOAD="curl -fsSL"
 elif command -v wget >/dev/null 2>&1; then
-    download() { wget -q "$1" -O "$2"; }
+    DOWNLOAD="wget -q -O"
 else
     echo "Ошибка: необходим curl или wget" >&2
     exit 1
 fi
 
-mkdir -p /usr/sbin /etc/webui /var/www/cgi-bin
+download() {
+    # $1 — URL, $2 — путь назначения
+    if echo "$DOWNLOAD" | grep -q curl; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -q "$1" -O "$2"
+    fi
+}
+
+mkdir -p /usr/sbin /etc/webui /var/www/cgi-bin || {
+    echo "Ошибка: не удалось создать директории" >&2
+    exit 1
+}
 
 # --- загрузка файлов ---
 echo "→ Загрузка max..."
-if [ -f /usr/sbin/max ]; then cp /usr/sbin/max /usr/sbin/max.bak; fi
-download "${BASE_URL}/max" "/usr/sbin/max"
+[ -f /usr/sbin/max ] && cp /usr/sbin/max /usr/sbin/max.bak
+download "${BASE_URL}/max" "/usr/sbin/max" || {
+    echo "Ошибка загрузки max" >&2
+    exit 1
+}
 
 echo "→ Загрузка max.conf..."
-if [ -f /etc/webui/max.conf ]; then cp /etc/webui/max.conf /etc/webui/max.conf.bak; fi
-download "${BASE_URL}/max.conf" "/etc/webui/max.conf"
+[ -f /etc/webui/max.conf ] && cp /etc/webui/max.conf /etc/webui/max.conf.bak
+download "${BASE_URL}/max.conf" "/etc/webui/max.conf" || {
+    echo "Ошибка загрузки max.conf" >&2
+    exit 1
+}
 
 echo "→ Загрузка ext-max.cgi..."
-if [ -f /var/www/cgi-bin/ext-max.cgi ]; then cp /var/www/cgi-bin/ext-max.cgi /var/www/cgi-bin/ext-max.cgi.bak; fi
-download "${BASE_URL}/ext-max.cgi" "/var/www/cgi-bin/ext-max.cgi"
+[ -f /var/www/cgi-bin/ext-max.cgi ] && cp /var/www/cgi-bin/ext-max.cgi /var/www/cgi-bin/ext-max.cgi.bak
+download "${BASE_URL}/ext-max.cgi" "/var/www/cgi-bin/ext-max.cgi" || {
+    echo "Ошибка загрузки ext-max.cgi" >&2
+    exit 1
+}
 
-chmod +x /usr/sbin/max
-chmod +x /var/www/cgi-bin/ext-max.cgi
+chmod +x /usr/sbin/max /var/www/cgi-bin/ext-max.cgi
 
 # --- включение hls и motionDetect в majestic.yaml ---
 if [ -f "$MAJESTIC" ]; then
@@ -51,7 +70,6 @@ if [ -f "$MAJESTIC" ]; then
     awk '
     BEGIN { in_hls=0; in_md=0; hls_done=0; md_done=0; hls_present=0; md_present=0 }
 
-    # топ-уровневые ключи YAML (без ведущих пробелов)
     /^[A-Za-z][A-Za-z0-9_]*:/ {
         if (in_hls && !hls_done) { print "  enabled: true"; hls_done=1 }
         if (in_md  && !md_done)  { print "  enabled: true"; md_done=1  }
@@ -63,7 +81,6 @@ if [ -f "$MAJESTIC" ]; then
         next
     }
 
-    # внутри секции hls — заменяем enabled на true (сохраняя отступ)
     in_hls && /^[ \t]+enabled:/ {
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
@@ -72,7 +89,6 @@ if [ -f "$MAJESTIC" ]; then
         next
     }
 
-    # внутри секции motionDetect — аналогично
     in_md && /^[ \t]+enabled:/ {
         match($0, /^[ \t]+/)
         indent = substr($0, 1, RLENGTH)
@@ -93,6 +109,7 @@ if [ -f "$MAJESTIC" ]; then
 
     if [ -s "${MAJESTIC}.tmp" ]; then
         mv "${MAJESTIC}.tmp" "$MAJESTIC"
+        echo "   ✓ hls и motionDetect включены"
     else
         rm -f "${MAJESTIC}.tmp"
         echo "⚠ Не удалось обработать $MAJESTIC — оставлен без изменений" >&2
@@ -101,12 +118,12 @@ else
     echo "⚠ Файл $MAJESTIC не найден — пропускаем настройку"
 fi
 
-# --- добавление пункта меню в header.cgi после открывающего <ul> Extensions ---
+# --- добавление пункта меню в header.cgi ---
 if [ -f "$HEADER" ]; then
     if grep -q 'ext-max.cgi' "$HEADER"; then
         echo "→ Пункт меню MAX уже присутствует в header.cgi"
     else
-        echo "→ Добавление пункта меню в header.cgi после строки Extensions..."
+        echo "→ Добавление пункта меню в header.cgi..."
         cp "$HEADER" "${HEADER}.bak"
 
         awk -v anchor="$MENU_ANCHOR" -v item="$MENU_ITEM" '
