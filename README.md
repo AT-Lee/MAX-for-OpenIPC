@@ -44,8 +44,19 @@ motionDetect:
 ```
 
 ---
+## Automatic Installation
+##### One-command installation in the camera's SSH console (as root):
 
-## Installation
+```sh
+curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s
+```
+##### Uninstallation
+```sh
+curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s uninstall
+```
+
+
+## Manual installation
 
 ##### 1. Copy files
 
@@ -171,8 +182,11 @@ Open `http://<camera_ip>/cgi-bin/ext-max.cgi` in your browser. The page includes
 │    → sets the extend flag, exits immediately    │
 └─────────────────────────────────────────────────┘
 ```
+### Confirmed Supported Devices
+- gk7205v200 + sc223a
+- gk7205v210 + sc223a
 
-## Credits
+### Credits
 
 - [OpenIPC project](https://github.com/OpenIPC) — the open-source firmware that makes all of this possible.
 - [MAX Platform API](https://dev.max.ru/docs-api) — the bot API.
