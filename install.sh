@@ -1,21 +1,29 @@
 #!/bin/sh
 # ============================================================================
-# MAX-for-OpenIPC — one-command installer
+# MAX-for-OpenIPC — one-command installer (v3.1)
 #
 # Install on an OpenIPC camera (SSH console, as root):
 #   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s --
 #   wget -qO-  https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s --
 #
-# Re-run the same command to update an existing installation.
+# Uninstall (the word "uninstall" WITHOUT dashes):
+#   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s uninstall
 #
-# Options (after "sh -s --"):
-#   --uninstall   remove MAX-for-OpenIPC from the camera
-#   --motion      add the motion.sh hook without asking (for scripted installs)
-#   --no-motion   do not add the motion.sh hook (no question asked)
-#   --no-menu     do not patch the web UI menu (header.cgi)
-#   --no-restart  do not restart majestic (even if majestic.yaml was changed)
-#   --force       suppress environment warnings
-#   -h, --help    show this help
+# Re-run the install command to update an existing installation; the existing
+# /etc/webui/max.conf (bot token, chat id) is kept unless --force is given.
+#
+# Options (after "sh -s --", or pipe-safe without dashes, e.g. "sh -s uninstall"):
+#   --uninstall | uninstall       remove MAX-for-OpenIPC from the camera
+#   --motion | motion=1           add the motion.sh hook without asking (scripted installs)
+#   --no-motion | no_motion=1     do not add the motion.sh hook (no question asked)
+#   --no-menu | no_menu=1         do not patch the web UI menu (header.cgi)
+#   --no-restart | no_restart=1   do not restart majestic (even if majestic.yaml was changed)
+#   --force | force=1             suppress environment warnings; overwrite max.conf with the default
+#   -h, --help | help             show this help
+#
+# IMPORTANT: in a pipe, "sh -s --uninstall" does NOT work — sh itself treats
+# "--uninstall" as its own option and the script never sees it. Pass options
+# without dashes ("uninstall", "no_motion=1") or use "sh -s -- --uninstall".
 #
 # Notes:
 #   * /etc/majestic.yaml is edited only when hls or motionDetect is not
@@ -67,14 +75,21 @@ One-command install on an OpenIPC camera (SSH, as root):
   curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s --
   wget -qO-  https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s --
 
-Options:
-  --uninstall   remove MAX-for-OpenIPC from the camera
-  --motion      add the motion.sh hook without asking (for scripted installs)
-  --no-motion   do not add the motion.sh hook (no question asked)
-  --no-menu     do not patch the web UI menu (header.cgi)
-  --no-restart  do not restart majestic (even if majestic.yaml was changed)
-  --force       suppress environment warnings
-  -h, --help    show this help
+Uninstall:
+  curl -fsSL https://raw.githubusercontent.com/AT-Lee/MAX-for-OpenIPC/refs/heads/main/install.sh | sh -s uninstall
+
+IMPORTANT (pipe mode): "sh -s --uninstall" does NOT work — sh itself treats it
+as its own option and the script never sees it. Pass options without dashes
+("uninstall", "no_motion=1", ...) or after a separate "--": "sh -s -- --uninstall".
+
+Options (both forms are equivalent):
+  --uninstall | uninstall       remove MAX-for-OpenIPC from the camera
+  --motion | motion=1           add the motion.sh hook without asking (scripted installs)
+  --no-motion | no_motion=1     do not add the motion.sh hook (no question asked)
+  --no-menu | no_menu=1         do not patch the web UI menu (header.cgi)
+  --no-restart | no_restart=1   do not restart majestic (even if majestic.yaml was changed)
+  --force | force=1             suppress environment warnings; overwrite max.conf with the default
+  -h, --help | help             show this help
 
 majestic.yaml is edited only when hls or motionDetect is not enabled yet.
 The web UI menu is patched on the current (rolling) webui only.
@@ -84,7 +99,8 @@ Environment (advanced):
   SRC_DIR=/path                  install from a local directory (offline install)
   ROOT=/path                     install into a different root (testing)
 
-Re-running the same install command updates an existing installation.
+Re-running the install command updates an existing installation; the existing
+/etc/webui/max.conf (bot token) is kept unless --force is given.
 EOF
 }
 
@@ -94,13 +110,13 @@ EOF
 OPT_UNINSTALL=0; OPT_MOTION=0; OPT_NO_MOTION=0; OPT_NO_MENU=0; OPT_NO_RESTART=0; OPT_FORCE=0
 while [ $# -gt 0 ]; do
         case "$1" in
-                --uninstall)  OPT_UNINSTALL=1 ;;
-                --motion)     OPT_MOTION=1 ;;
-                --no-motion)  OPT_NO_MOTION=1 ;;
-                --no-menu)    OPT_NO_MENU=1 ;;
-                --no-restart) OPT_NO_RESTART=1 ;;
-                --force)      OPT_FORCE=1 ;;
-                -h|--help)    usage; exit 0 ;;
+                --uninstall|uninstall)                  OPT_UNINSTALL=1 ;;
+                --motion|motion=1|MOTION=1)             OPT_MOTION=1 ;;
+                --no-motion|no_motion=1|NO_MOTION=1)    OPT_NO_MOTION=1 ;;
+                --no-menu|no_menu=1|NO_MENU=1)          OPT_NO_MENU=1 ;;
+                --no-restart|no_restart=1|NO_RESTART=1) OPT_NO_RESTART=1 ;;
+                --force|force=1|FORCE=1)                OPT_FORCE=1 ;;
+                -h|--help|help)                         usage; exit 0 ;;
                 --) ;;
                 *) usage; printf '\nUnknown option: %s\n' "$1" >&2; exit 1 ;;
         esac
@@ -495,6 +511,7 @@ summary() {
                         ;;
         esac
         printf ' Cron mode:   enable "Add to crontab" on the MAX page in the web UI.\n'
+        printf ' Uninstall:   curl -fsSL https://raw.githubusercontent.com/%s/%s/install.sh | sh -s uninstall\n' "$REPO" "$BRANCH"
         printf '%s\n' '----------------------------------------------------------------'
 }
 
@@ -510,7 +527,7 @@ uninstall() {
         fi
         for f in "$F_MAX" "$F_CGI" "$F_CONF"; do
                 if [ -f "$f" ]; then
-                        rm -f "$f" "$f.bak"
+                        rm -f "$f"
                         ok "removed $f"
                 else
                         skip "$f was not installed"
@@ -543,6 +560,11 @@ uninstall() {
         fi
         rm -f "$ROOT"/tmp/max.lock "$ROOT"/tmp/max.extend "$ROOT"/tmp/max.queue \
                 "$ROOT"/tmp/max.queue.wip "$ROOT"/tmp/max.worker_exit "$ROOT"/tmp/m-*.mp4 2>/dev/null
+        for b in "$F_MAX.bak" "$F_CGI.bak" "$F_CONF.bak" "$F_MOTION.bak" "$F_HEADER.bak" "$F_YAML.bak"; do
+                [ -f "$b" ] && ok "backup kept: $b"
+        done
+        [ -f "$F_CONF.bak" ] && \
+                warn "$F_CONF.bak may still contain your bot token/chat id — delete it manually if it is not needed"
         printf '\nDone. hls and motionDetect were left enabled in %s — disable them there\n' "$F_YAML"
         printf 'if they are not needed. Re-run this installer to install MAX again.\n'
 }
@@ -556,9 +578,13 @@ get_sources || exit 1
 
 install_file "$TMPD/max" "$F_MAX" 755 "installed /usr/sbin/max"
 install_file "$TMPD/ext-max.cgi" "$F_CGI" 755 "installed /var/www/cgi-bin/ext-max.cgi"
-install_file "$TMPD/max.conf" "$F_CONF" 644 "installed /etc/webui/max.conf (default config)"
-[ -f "$F_CONF.bak" ] && ! cmp -s "$F_CONF.bak" "$F_CONF" && \
-        warn "your previous /etc/webui/max.conf is saved as max.conf.bak — restore it to keep the bot token/chat id"
+if [ -f "$F_CONF" ] && [ "$OPT_FORCE" != "1" ]; then
+        skip "/etc/webui/max.conf kept — your bot token/chat id are not touched (--force overwrites it with the default)"
+else
+        install_file "$TMPD/max.conf" "$F_CONF" 644 "installed /etc/webui/max.conf (default config)"
+        [ -f "$F_CONF.bak" ] && ! cmp -s "$F_CONF.bak" "$F_CONF" && \
+                warn "your previous /etc/webui/max.conf is saved as max.conf.bak — restore it to keep the bot token/chat id"
+fi
 
 patch_yaml
 patch_motion
