@@ -17,8 +17,8 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
                 [ -z "$max_token" ] && set_error_flag "Token required."
                 [ -z "$max_chat_id" ] && set_error_flag "Chat ID required."
         }
-        case "$max_video_duration" in *[!0-9]*) max_video_duration="10" ;; esac
-        case "$max_min_free_pct" in *[!0-9]*) max_min_free_pct="10" ;; esac
+        case "$max_video_duration" in *[!0-9]*) max_video_duration="12" ;; esac
+        case "$max_min_free_pct" in *[!0-9]*) max_min_free_pct="15" ;; esac
         if [ -z "$error" ]; then
                 rm -f "$config_file"
                 for p in $params; do echo "max_${p}=\"$(eval echo \$max_${p})\"" >> "$config_file"; done
@@ -34,8 +34,8 @@ fi
 [ -z "$max_crontab" ] && max_crontab="true"
 [ -z "$max_interval" ] && max_interval="15"
 [ -z "$max_caption" ] && max_caption="%hostname, %datetime"
-[ -z "$max_video_duration" ] && max_video_duration="10"
-[ -z "$max_min_free_pct" ] && max_min_free_pct="10"
+[ -z "$max_video_duration" ] && max_video_duration="12"
+[ -z "$max_min_free_pct" ] && max_min_free_pct="15"
 
 maj_warn=""
 if [ -e /etc/majestic.yaml ]; then
@@ -58,8 +58,8 @@ fi
 <% field_text "max_token" "Token" "Bot auth token." %>
 <% field_text "max_chat_id" "Chat ID" "Chat to post videos to." %>
 <div class="text-uppercase x-small text-secondary mt-3 mb-2">Video</div>
-<% field_string "max_video_duration" "Segment duration" "eval" "5 10 15 30" "Seconds per segment. Motion extends capture." %>
-<% field_string "max_min_free_pct" "Min free %" "eval" "5 10 15 20" "Abort when /tmp free space below this %." %>
+<% field_string "max_video_duration" "Segment duration" "eval" "7 12 17 32" "Seconds per segment. Motion extends capture." %>
+<% field_string "max_min_free_pct" "Min free %" "eval" "10 15 20 30" "Abort when /tmp free space below this %." %>
 <% field_text "max_caption" "Caption" "Supports %hostname, %datetime, %soctemp." %>
 <div class="text-uppercase x-small text-secondary mt-3 mb-2">Schedule</div>
 <% field_string "max_interval" "Interval" "eval" "15 30 60 120" "Minutes." %>
